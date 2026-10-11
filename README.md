@@ -41,3 +41,103 @@ non-compliant at some point. Key-recovery and message-recovery modes
 are not part of any standard or announced future standard, so these
 cannot be compliant to anything. Everything here is experimental;
 use at your own risk.
+
+# Compilation
+
+Type `make`. See the [Makefile](Makefile) for some options; default
+options should work out-of-the-box on any Linux or sufficiently Unix-like
+systems.
+
+On Windows with MSVC, start a MSVC command-line and use:
+`nmake -f Makefile.win32`
+
+This code is fundamentally a library, but the default compilation also
+produces two command-line utilities: `test_fndsa` for unit tests of
+correctness, and `speed_fndsa` for benchmark. By default, `speed_fndsa`
+will try to read the CPU cycle counter registers, which are normally
+forbidden to access from basic userland, and this will crash; see
+[cycle-counter](https://github.com/pornin/cycle-counter) for ways to fix
+that on some systems. Alternatively, launch `speed_fndsa -tsc` to make
+it use the generic time stamp counter, which in genral has a fixed
+frequency that does not track CPU frequency scaling. TSC benchmarks are
+not very reliable, especially if you did not disable this dynamic
+frequency scaling ("TurboBoost" in Intel terminology).
+
+# Benchmarks
+
+## x86 (64-bit)
+
+Platform: Intel i5-8259U "Coffee Lake", 2.3 GHz, TurboBoost disabled,
+clang 18.1.3:
+
+```
+    operation             Falcon-512   Falcon-1024
+   ------------------------------------------------
+    Keygen                  8560000      33000000
+    sign                    2160000       4510000
+    verify                    62000        119000
+    expand key               523000       1120000
+    sign with exp key       1210000       2470000
+    sign (KRM)              2170000       4520000
+    verify (KRM)              66600        129000
+    sign (MRM)              2320000       4830000
+    verify (MRM)             116000        227000
+```
+
+Notes:
+
+  * All values are averages, in clock cycles.
+
+  * Signatures are over a short (4 bytes) un-hashed message. For message
+    recovery mode (MRM), the signature is over two message parts: the
+    embedded part (length 811 or 1633 bytes) is recovered during
+    verification; the rest can have arbitrary length, and is set to 4
+    bytes for these benchmarks.
+
+  * The "expanded key" is a representation of the Falcon tree. It
+    has size 26760 (n=512) or 56456 (n=1024) bytes; it can be reused for
+    multiple signature generations.
+
+  * AVX2 is used in key pair generation and in verification, but not
+    in signature generation. Verification in key recovery mode (KRM)
+    and message recovery mode (MRM) uses SSE2 optimizations, but not
+    AVX2.
+
+  * KRM and MRM signatures with an expanded key have not been implemented
+    (yet) but should provide a commensurate speed-up (i.e. the overhead
+    of KRM or MRM does not depend on whether the core signature generation
+    uses a pre-expanded key or dynamic Falcon tree generation).
+
+## Arm Cortex M4
+
+Platform: STM32F407 micro-controller (Arm Cortex M4F core), 24 MHz,
+gcc 13.2.1.
+
+```
+    operation             Falcon-512   Falcon-1024
+   ------------------------------------------------
+    Keygen                 66700000     286000000
+    sign                    8630000      17930000
+    verify                   348000        683000
+    expand key              1613000       3420000
+    sign with exp key       5580000      11420000
+    sign (KRM)              9020000      19540000
+    verify (KRM)             271000        529000
+    sign (MRM)             10140000      20990000
+    verify (MRM)             538000       1057000
+```
+
+Notes:
+
+  * The M4F has a hardware single-precision floating-point unit; the
+    floating-point operations are not used at all, but the 32-bit
+    floating-point registers are used for temporary data storage.
+
+  * All the manually-written assembly code strictly complies with the
+    AAPCS rules; in particular, register `r9` is not used at all since
+    it *can* be reserved for any purposes on some platforms (i.e. it
+    is not necessarily safe to use it within a routine even if the
+    previous value is restored on exit).
+
+  * These values are averages measured over 35000 instances for each
+    operation.
