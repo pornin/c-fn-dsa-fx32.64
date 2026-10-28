@@ -89,7 +89,16 @@ static void
 make_c_std(fndsa_variant *fv, unsigned logn, uint8_t *sig, uint16_t *c)
 {
 	fndsa_variant_std *fvs = (fndsa_variant_std *)fv;
-	hash_to_point(logn, sig + 1, fvs->mu, c);
+	hash_to_point(logn, sig + 1, fvs->mu, 0, c);
+}
+
+/* KRM uses a specific hash-to-point process (for domain separation with
+   the standard mode). */
+static void
+make_c_krm(fndsa_variant *fv, unsigned logn, uint8_t *sig, uint16_t *c)
+{
+	fndsa_variant_std *fvs = (fndsa_variant_std *)fv;
+	hash_to_point(logn, sig + 1, fvs->mu, 1, c);
 }
 
 /* Verified properties at this point:
@@ -310,10 +319,10 @@ sign_krm(const uint8_t *sign_key, size_t sign_key_len,
 	fndsa_stats_start_sign(logn, sign_key, mu, seedbuf);
 #endif
 
-	/* KRM uses the same nonce and hashing as in standard mode; only
-	   the signature type changes. */
+	/* KRM uses the same nonce as in standard mode, but with
+	   a slightly different hashing process. */
 	fndsa_variant_std fvs = {
-		{ &make_nonce_std, &make_c_std, SIG_TYPE_KRM },
+		{ &make_nonce_std, &make_c_krm, SIG_TYPE_KRM },
 		mu
 	};
 	return sign_core(logn, sign_key + 1, &fvs.inner,

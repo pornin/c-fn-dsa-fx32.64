@@ -502,6 +502,7 @@ fg_nbits(unsigned logn)
       src_len   remaining unread bytes
       acc       unprocessed bits
       acc_len   number of unprocessed bits (0 to 7)
+      pad       non-zero if a padding 1 must be returned
    Unprocessed bits are the least significant in acc. When the source is
    exhausted and more bits are requested, implicit bytes of value 0 are
    assumed. */
@@ -510,6 +511,7 @@ typedef struct {
 	size_t src_len;
 	unsigned acc;
 	unsigned acc_len;
+	unsigned pad;
 } bits_reader;
 
 /* Read 163 bits from the provided reader, and encode them into 12 values
@@ -527,6 +529,7 @@ void bits_27_to_q2(bits_reader *br, uint16_t *d);
       dst_len   remaining room in destination
       acc       accumulated bits (to be written when possible)
       acc_len   number of accumulated bits (0 to 7)
+      pad       non-zero if a padding bit is still expected
    Accumulated bits are the least significant in acc. If the destination
    is too short (dst_len reaches 0) and a byte would have to be written,
    and that byte does not have value 0x00, then an error is reported. */
@@ -535,6 +538,7 @@ typedef struct {
 	size_t dst_len;
 	unsigned acc;
 	unsigned acc_len;
+	unsigned pad;
 } bits_writer;
 
 /* Decode 163 bits from 12 successive values modulo q, and write the bits
@@ -546,6 +550,18 @@ int bits_q12_to_163(const uint16_t *s, bits_writer *bw);
    into the provided writer. Returned value is 1 on success, 0 on error. */
 #define bits_q2_to_27   fndsa_bits_q2_to_27
 int bits_q2_to_27(const uint16_t *s, bits_writer *bw);
+
+/* Find the location of the highest non-zero bit in the 163-bit chunk
+   encoded in the provided 12-element array. Returned value is -1 if
+   the encoding is incorrect or the chunk is all-zeros. */
+#define bits_q12_msb   fndsa_bits_q12_msb
+int bits_q12_msb(const uint16_t *s);
+
+/* Find the location of the highest non-zero bit in the 27-bit chunk
+   encoded in the provided 2-element array. Returned value is -1 if
+   the encoding is incorrect or the chunk is all-zeros. */
+#define bits_q2_msb   fndsa_bits_q2_msb
+int bits_q2_msb(const uint16_t *s);
 
 /* ==================================================================== */
 /*
@@ -759,10 +775,11 @@ uint32_t avx2_mqpoly_sqnorm_signed(unsigned logn, const uint16_t *a);
     logn              degree (logarithmic, 2 to 10)
     nonce             40-byte random nonce
     mu                64-byte message representative
+    krm               non-zero if using KRM
     c                 output polynomial  */
 #define hash_to_point   fndsa_hash_to_point
 void hash_to_point(unsigned logn,
-	const uint8_t *nonce, const uint8_t *mu, uint16_t *c);
+	const uint8_t *nonce, const uint8_t *mu, int krm, uint16_t *c);
 
 #if FNDSA_AVX2
 #define has_avx2   fndsa_has_avx2
@@ -890,6 +907,11 @@ void mrm_H2(unsigned logn, const uint16_t *c1, uint16_t *d);
 void mrm_hash_to_point(unsigned logn, const uint16_t *nonce,
 	const uint8_t *mu, const uint8_t *embedded, size_t embedded_len,
 	uint16_t *c);
+
+/* Find out embedded part size (in bytes) by using the padding bits.
+   Returned value is -1 if the format is invalid. */
+#define mrm_get_embedded_length   fndsa_mrm_get_embedded_length
+int mrm_get_embedded_length(unsigned logn, const uint16_t *t);
 
 /* ==================================================================== */
 

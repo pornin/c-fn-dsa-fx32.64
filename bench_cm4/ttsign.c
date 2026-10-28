@@ -738,8 +738,6 @@ main(void)
 	extern uint32_t bench_iNTT_q(unsigned logn, uint16_t *d);
 	extern uint32_t bench_NTT_q2(unsigned logn, uint16_t *d);
 	extern uint32_t bench_iNTT_q2(unsigned logn, uint16_t *d);
-	extern uint32_t bench_hash_to_point(unsigned logn,
-		const uint8_t *nonce, const uint8_t *mu, uint16_t *c);
 	extern uint32_t bench_FFT_int32(unsigned logn, rx *f, int32_t *a);
 	extern uint32_t bench_FFT_int32_selfadj(
 		unsigned logn, rx *f, int32_t *a);
@@ -781,12 +779,6 @@ main(void)
 		bench_iNTT_q2(8, tmp_aligned) - cal,
 		bench_iNTT_q2(9, tmp_aligned) - cal,
 		bench_iNTT_q2(10, tmp_aligned) - cal);
-	uint8_t *f_mu = (uint8_t *)tmp_aligned + 2048;
-	uint8_t *f_nonce = f_mu + 64;
-	prf("hash_to_point:  n=256: %6u   n=512: %6u   n=1024: %6u\n",
-		bench_hash_to_point(8, f_nonce, f_mu, tmp_aligned) - cal,
-		bench_hash_to_point(9, f_nonce, f_mu, tmp_aligned) - cal,
-		bench_hash_to_point(10, f_nonce, f_mu, tmp_aligned) - cal);
 
 	rx *tf = (rx *)tmp_aligned;
 	int32_t *ta = (int32_t *)(tf + 1024);

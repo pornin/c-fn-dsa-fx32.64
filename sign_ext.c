@@ -308,7 +308,7 @@ sign_core_expkey(unsigned logn, const void *ekbuf, const uint8_t *mu,
 		uint16_t *c = ncF + n;
 
 		/* c <- hashed input mod q  (NTT) */
-		hash_to_point(logn, sig + 1, mu, c);
+		hash_to_point(logn, sig + 1, mu, 0, c);
 		mqpoly_ext_to_int(logn, c);
 		mqpoly_int_to_ntt(logn, c);
 

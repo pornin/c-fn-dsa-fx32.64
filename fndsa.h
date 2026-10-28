@@ -715,18 +715,24 @@ size_t fndsa_sign_mrm_seeded_temp(const void *sign_key, size_t sign_key_len,
  *
  * This is similar to fndsa_verify_temp(), except that the function
  * expects an MRM signature, and the embedded part of the message is
- * extracted and written into the provided embedded[] buffer. The
- * size of that buffer (embedded_len) must match the size which was
- * used to generate the signature; it must also not be greater than
- * the maximum size for the used degree (see FNDSA_MAX_MRM_SIZE).
- * Temporary area size requirements are the same as in fndsa_verify_temp().
- * Returned value is 1 on success, 0 on error.
+ * extracted and written into the provided embedded[] buffer; the
+ * size of that buffer (embedded_max_len) is provided as input. See
+ * the FNDSA_MAX_MRM_SIZE() macro for the maximum size an embedded part
+ * may have (depending on the used degree).
+ *
+ * If the signature is valid and the embedded part fits in the provided
+ * output buffer, then this function returns the size of the embedded
+ * part as found in the signature (in bytes). Otherwise, this function
+ * returns -1.
+ *
+ * WARNING: contrary to other verification functions, this one returns
+ * -1 on error; 0 is a success (corresponding to an empty embedded part).
  */
 int fndsa_verify_mrm_temp(const void *sig, size_t sig_len,
 	const void *vrfy_key, size_t vrfy_key_len,
 	const void *ctx, size_t ctx_len,
 	const char *id, const void *hv, size_t hv_len,
-	void *embedded, size_t embedded_len,
+	void *embedded, size_t embedded_max_len,
 	void *tmp, size_t tmp_len);
 
 /* ====================================================================== */

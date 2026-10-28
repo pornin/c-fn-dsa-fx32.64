@@ -7,12 +7,16 @@
 /* see inner.h */
 void
 hash_to_point(unsigned logn,
-        const uint8_t *nonce, const uint8_t *mu, uint16_t *c)
+        const uint8_t *nonce, const uint8_t *mu, int krm, uint16_t *c)
 {
 	shake_context sc;
 	shake_init(&sc, 256);
 	shake_inject(&sc, nonce, 40);
 	shake_inject(&sc, mu, 64);
+	if (krm) {
+		uint8_t x = 1;
+		shake_inject(&sc, &x, 1);
+	}
 	shake_flip(&sc);
 
 	size_t n = (size_t)1 << logn;
@@ -114,9 +118,11 @@ fndsa_compute_mu(void *mu, const void *hashed_vkey,
 
 	shake_context sc;
 	shake_init(&sc, 256);
-	if (hashed_vkey != NULL) {
-		shake_inject(&sc, hashed_vkey, 64);
+	if (hashed_vkey == NULL) {
+		static const uint8_t zz[64] = { 0 };
+		hashed_vkey = &zz;
 	}
+	shake_inject(&sc, hashed_vkey, 64);
 	const uint8_t *id_u = (const uint8_t *)id;
 	size_t id_len;
 

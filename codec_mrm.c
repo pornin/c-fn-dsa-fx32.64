@@ -21,6 +21,9 @@ bits_read32(bits_reader *br)
 		if (br->src_len != 0) {
 			x |= ((uint32_t)*br->src ++) << i;
 			br->src_len --;
+		} else if (br->pad) {
+			x |= (uint32_t)1 << i;
+			br->pad = 0;
 		}
 	}
 	unsigned acc_len = br->acc_len;
@@ -42,6 +45,9 @@ bits_read27(bits_reader *br)
 		if (br->src_len != 0) {
 			x |= ((uint32_t)*br->src ++) << i;
 			br->src_len --;
+		} else if (br->pad) {
+			x |= (uint32_t)1 << i;
+			br->pad = 0;
 		}
 	}
 	uint32_t r = br->acc | (x << acc_len);
@@ -60,6 +66,9 @@ bits_read3(bits_reader *br)
 		if (br->src_len != 0) {
 			acc |= ((uint32_t)*br->src ++) << acc_len;
 			br->src_len --;
+		} else if (br->pad) {
+			acc |= (uint32_t)1 << acc_len;
+			br->pad = 0;
 		}
 		acc_len += 8;
 	}
@@ -168,8 +177,13 @@ bits_write(uint32_t x, unsigned x_len, bits_writer *bw)
 	while (num -- > 0) {
 		if (bw->dst_len == 0) {
 			/* If we run out of space, then z must contain
-			   only zeros. */
-			return z == 0;
+			   only zeros (and optionally the padding bit). */
+			if (bw->pad) {
+				bw->pad = 0;
+				return z == 1;
+			} else {
+				return z == 0;
+			}
 		} else {
 			bw->dst_len --;
 			*bw->dst ++ = (uint8_t)z;
@@ -226,4 +240,48 @@ bits_q2_to_27(const uint16_t *s, bits_writer *bw)
 		return 0;
 	}
 	return bits_write(x, 27, bw);
+}
+
+/* see inner.h */
+int
+bits_q12_msb(const uint16_t *s)
+{
+	uint32_t x[7];
+
+	/* Decode the 12 values into a 192-bit integer x */
+	x[0] = (uint32_t)s[11];
+	for (size_t i = 1; i < 12; i ++) {
+		uint32_t cc = (uint32_t)s[11 - i];
+		for (size_t j = 0; j < ((i + 1) >> 1); j ++) {
+			uint64_t z = (uint64_t)x[j] * Q_MOD + (uint64_t)cc;
+			x[j] = (uint32_t)z;
+			cc = (uint32_t)(z >> 32);
+		}
+		x[(i + 1) >> 1] = cc;
+	}
+
+	/* Value should fit in 163 bits, hence top word should contain at
+	   most 3 bits. */
+	if (x[5] > 0x07) {
+		return -1;
+	}
+
+	/* Find highest non-zero word. */
+	for (int j = 5; j >= 0; j --) {
+		if (x[j] != 0) {
+			return (j << 5) + 31 - lzcnt_nonzero(x[j]);
+		}
+	}
+	return -1;
+}
+
+/* see inner.h */
+int
+bits_q2_msb(const uint16_t *s)
+{
+	uint32_t x = (uint32_t)s[0] + (uint32_t)s[1] * Q_MOD;
+	if (x == 0 || x > 0x07FFFFFF) {
+		return -1;
+	}
+	return 31 - lzcnt_nonzero(x);
 }

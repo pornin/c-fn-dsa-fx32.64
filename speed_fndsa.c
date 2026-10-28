@@ -595,7 +595,8 @@ bench_make_c(unsigned logn, unsigned *x)
 	uint64_t tt[100];
 	for (int i = 0; i < 120; i ++) {
 		uint64_t begin = core_cycles();
-		hash_to_point(logn, (uint8_t *)tmp, (uint8_t *)tmp + 40, tmp);
+		hash_to_point(logn,
+			(uint8_t *)tmp, (uint8_t *)tmp + 40, 0, tmp);
 		uint64_t end = core_cycles();
 		if (i >= 20) {
 			tt[i - 20] = end - begin;

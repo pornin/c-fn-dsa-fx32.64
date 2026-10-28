@@ -80,7 +80,7 @@ inner_verify(unsigned logn_min, unsigned logn_max,
 	mqpoly_ntt_to_int(logn, t2);
 
 	/* Hash message into polynomial c (into t1, converted to int) */
-	hash_to_point(logn, sigbuf + 1, mu, t1);
+	hash_to_point(logn, sigbuf + 1, mu, 0, t1);
 	mqpoly_ext_to_int(logn, t1);
 
 	/* t1 <- s1 = c - s2*h (converted to ext), and compute its norm;
@@ -172,7 +172,7 @@ avx2_inner_verify(unsigned logn_min, unsigned logn_max,
 	avx2_mqpoly_ntt_to_int(logn, t2);
 
 	/* Hash message into polynomial c (into t1, converted to int) */
-	hash_to_point(logn, sigbuf + 1, mu, t1);
+	hash_to_point(logn, sigbuf + 1, mu, 0, t1);
 	avx2_mqpoly_ext_to_int(logn, t1);
 
 	/* t1 <- s1 = c - s2*h (converted to ext), and compute its norm. */
@@ -338,7 +338,7 @@ inner_verify_krm(unsigned logn_min, unsigned logn_max,
 
 	/* t0 <- c - s0  (mod q) */
 	mqpoly_signed_to_int(logn, t1);
-	hash_to_point(logn, sigbuf + 1, mu, t0);
+	hash_to_point(logn, sigbuf + 1, mu, 1, t0);
 	mqpoly_ext_to_int(logn, t0);
 	mqpoly_sub(logn, t0, t1);
 

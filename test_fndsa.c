@@ -2068,11 +2068,12 @@ test_mrm_codec(void)
 		shake_inject(&sc, tmp1, 2);
 		shake_flip(&sc);
 		shake_extract(&sc, tmp1, len);
+		memset(d, 0, sizeof d);
 
 		/* Encode over 478 values (MRM at n = 512) */
 		if (len <= 811) {
-			bits_reader br = { tmp1, len, 0, 0 };
-			size_t j = 0;
+			bits_reader br = { tmp1, len, 0, 0, 1 };
+			size_t j = MRM_LAMBDA(9) + MRM_GAMMA(9);
 			for (int i = 0; i < 39; i ++) {
 				bits_163_to_q12(&br, &d[j]);
 				j += 12;
@@ -2082,9 +2083,16 @@ test_mrm_codec(void)
 				j += 2;
 			}
 
+			int emb_len = mrm_get_embedded_length(9, d);
+			if (emb_len != (int)len) {
+				fprintf(stderr, "ERR emb_len(9): %d (%zu)\n",
+					emb_len, len);
+				exit(EXIT_FAILURE);
+			}
+
 			memset(tmp2, 'T', sizeof tmp2);
-			bits_writer bw = { tmp2, len, 0, 0 };
-			j = 0;
+			bits_writer bw = { tmp2, len, 0, 0, 1 };
+			j = MRM_LAMBDA(9) + MRM_GAMMA(9);
 			for (int i = 0; i < 39; i ++) {
 				if (!bits_q12_to_163(&d[j], &bw)) {
 					fprintf(stderr, "ERR 163 i=%d\n", i);
@@ -2099,12 +2107,69 @@ test_mrm_codec(void)
 				}
 				j += 2;
 			}
-			if (bw.acc != 0) {
+			if ((len < 811 && bw.acc != 0)
+				|| (len == 811 && bw.acc != 1))
+			{
 				fprintf(stderr, "ERR extraneous bits\n");
 				exit(EXIT_FAILURE);
 			}
 
 			check_eq(tmp1, tmp2, len, "enc/dec 478");
+			for (size_t i = len; i < sizeof tmp2; i ++) {
+				if (tmp2[i] != 'T') {
+					fprintf(stderr,
+						"ERR overflow len=%zu i=%zu\n",
+						len, i);
+					exit(EXIT_FAILURE);
+				}
+			}
+		}
+
+		/* Encode over 962 values (MRM at n = 1024) */
+		if (len <= 1633) {
+			bits_reader br = { tmp1, len, 0, 0, 1 };
+			size_t j = MRM_LAMBDA(10) + MRM_GAMMA(10);
+			for (int i = 0; i < 80; i ++) {
+				bits_163_to_q12(&br, &d[j]);
+				j += 12;
+			}
+			for (int i = 0; i < 1; i ++) {
+				bits_27_to_q2(&br, &d[j]);
+				j += 2;
+			}
+
+			int emb_len = mrm_get_embedded_length(10, d);
+			if (emb_len != (int)len) {
+				fprintf(stderr, "ERR emb_len(10): %d (%zu)\n",
+					emb_len, len);
+				exit(EXIT_FAILURE);
+			}
+
+			memset(tmp2, 'T', sizeof tmp2);
+			bits_writer bw = { tmp2, len, 0, 0, 1 };
+			j = MRM_LAMBDA(10) + MRM_GAMMA(10);
+			for (int i = 0; i < 80; i ++) {
+				if (!bits_q12_to_163(&d[j], &bw)) {
+					fprintf(stderr, "ERR 163 i=%d\n", i);
+					exit(EXIT_FAILURE);
+				}
+				j += 12;
+			}
+			for (int i = 0; i < 1; i ++) {
+				if (!bits_q2_to_27(&d[j], &bw)) {
+					fprintf(stderr, "ERR 27 i=%d\n", i);
+					exit(EXIT_FAILURE);
+				}
+				j += 2;
+			}
+			if ((len < 1633 && bw.acc != 0)
+				|| (len == 1633 && bw.acc != 1))
+			{
+				fprintf(stderr, "ERR extraneous bits\n");
+				exit(EXIT_FAILURE);
+			}
+
+			check_eq(tmp1, tmp2, len, "enc/dec 962");
 			for (size_t i = len; i < sizeof tmp2; i ++) {
 				if (tmp2[i] != 'T') {
 					fprintf(stderr,
@@ -7047,12 +7112,14 @@ test_self_mrm(void)
 				}
 				memset(emb2 + emb_len, 0x54,
 					maxemb_len + 4 - emb_len);
-				if (!fndsa_verify_mrm_temp(sig, sig_len,
-					vk, vk_len,
+				int emb_len_2 = fndsa_verify_mrm_temp(
+					sig, sig_len, vk, vk_len,
 					NULL, 0, FNDSA_HASH_ID_RAW, "test", 4,
-					emb2, emb_len, tmp, vrfytmp_len))
-				{
-					fprintf(stderr, "ERR verify (1)\n");
+					emb2, maxemb_len, tmp, vrfytmp_len);
+				if (emb_len_2 != (int)emb_len) {
+					fprintf(stderr, "ERR verify (1):"
+						" %d (expected: %zu)\n",
+						emb_len_2, emb_len);
 					exit(EXIT_FAILURE);
 				}
 				check_eq(emb, emb2, emb_len, "embedded");
@@ -7065,12 +7132,13 @@ test_self_mrm(void)
 						exit(EXIT_FAILURE);
 					}
 				}
-				if (fndsa_verify_mrm_temp(sig, sig_len,
-					vk, vk_len,
+				emb_len_2 = fndsa_verify_mrm_temp(
+					sig, sig_len, vk, vk_len,
 					NULL, 0, FNDSA_HASH_ID_RAW, "nope", 4,
-					emb2, emb_len, tmp, vrfytmp_len))
-				{
-					fprintf(stderr, "ERR verify (2)\n");
+					emb2, maxemb_len, tmp, vrfytmp_len);
+				if (emb_len_2 >= 0) {
+					fprintf(stderr, "ERR verify (2): %d\n",
+						emb_len_2);
 					exit(EXIT_FAILURE);
 				}
 			}

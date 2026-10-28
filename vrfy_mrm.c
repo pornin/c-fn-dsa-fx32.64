@@ -13,7 +13,7 @@ inner_verify_mrm(unsigned logn_min, unsigned logn_max,
 	const void *vrfy_key, size_t vrfy_key_len,
 	const void *ctx, size_t ctx_len,
 	const char *id, const void *hv, size_t hv_len,
-	void *embedded, size_t embedded_len,
+	void *embedded, size_t embedded_max_len,
 	void *tmp, size_t tmp_len)
 {
 	/* Get header bytes for signature, check the signature type,
@@ -40,11 +40,6 @@ inner_verify_mrm(unsigned logn_min, unsigned logn_max,
 	}
 	const uint8_t *vkbuf = (const uint8_t *)vrfy_key;
 	if (vkbuf[0] != logn) {
-		return 0;
-	}
-
-	/* Check embedded message part length. */
-	if (embedded_len > FNDSA_MAX_MRM_SIZE(logn)) {
 		return 0;
 	}
 
@@ -125,8 +120,17 @@ inner_verify_mrm(unsigned logn_min, unsigned logn_max,
 	/* Since t1[0..lambda-1] was cleared, t0[0..lambda-1] still
 	   contains the received c1. */
 
+	/* Find out the actual embedded message length by locating the
+	   trailing '1' bit (and removing it). */
+	int embedded_len = mrm_get_embedded_length(logn, t0);
+	if (embedded_len < 0 || (size_t)embedded_len > embedded_max_len) {
+		/* Invalid padding, or embedded part too large for the
+		   provided buffer. */
+		return -1;
+	}
+
 	/* We can now decode the embedded part. */
-	bits_writer bw = { embedded, embedded_len, 0, 0 };
+	bits_writer bw = { embedded, (size_t)embedded_len, 0, 0, 1 };
 	size_t num_163 = MRM_NUM163(logn);
 	size_t num_27 = MRM_NUM27(logn);
 	size_t j = MRM_LAMBDA(logn) + MRM_GAMMA(logn);
@@ -142,17 +146,21 @@ inner_verify_mrm(unsigned logn_min, unsigned logn_max,
 		}
 		j += 2;
 	}
-	/* Ensure remaining bits are all zeros. */
-	if (bw.acc != 0) {
-		return 0;
-	}
+	/* mrm_get_embedded_length() validated that the embedded part was
+	   validly encoded, and the padding bit was removed when decoding,
+	   so no further encoded-related check remains. */
 
 	/* Recompute c1 into t1. */
 	mrm_H1(logn, &t0[MRM_LAMBDA(logn)], mu, embedded, embedded_len, t1);
 
 	/* Signature is valid only if this recomputed c1 matches the
 	   value found in the rebuilt c polynomial. */
-	return memcmp(t0, t1, MRM_LAMBDA(logn) * sizeof(uint16_t)) == 0;
+	if (memcmp(t0, t1, MRM_LAMBDA(logn) * sizeof(uint16_t)) != 0) {
+		return -1;
+	}
+
+	/* Return embedded part length. */
+	return embedded_len;
 }
 
 /* see fndsa.h */
