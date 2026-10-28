@@ -1,0 +1,147 @@
+KRM/MRM details
+---------------
+
+We list here some details on the exact implemented computations,
+especially for KRM and MRM. Some of the text also specifies a "ring
+mode" (for ring signature), to show how it should be domain-separated
+within the computation of µ, but ring signatures are not specifically
+implemented here (presumably, a ring signature implementation could
+leverage the code here, through the "external µ" API).
+
+
+Notations:
+  SHAKE256(x)[n]      SHAKE256 over input x, output size is n bytes
+
+  SHAKE256(x)<mq:n>   SHAKE256 over input x, output is used in rejection
+                      sampling to produce n values modulo q
+
+  H(vk)               SHAKE256(vk)[64] (hash of verifying key)
+
+  RPK                 SHAKE256(H(vk1) || H (vk2) || ... )[64]
+                      (hash of hashes of verifying keys in ring modes)
+
+  ZZ                  [0x00; 64]  (64 bytes of value 0x00)
+
+  bytes(x)            encode x (k elements of Z_q) into 2*k bytes
+                      (each value in [0,q-1] is encoded into two bytes
+                      with little-endian convention)
+
+  enc(m)[r]           encode m into r elements of Z_q (arithmetic encoding,
+                      reversible; if m is too short, then it is padded
+                      with zeros).
+
+std = "standard" mode (as in FIPS 206 draft-of-draft)
+KRM = key recovery mode
+MRM = message recovery mode
+#ctx = size of context string (one byte, 0 to 255)
+#ring = number of ring participants (one byte, 0 to 255)
+
+In "plain" mode, message M is used as-is in the input to SHAKE. In
+"hashed" mode, message M is processed with a hash function h, which is
+identified by OID(h) (ASN.1/DER encoding of the object identifier for h,
+it's a constant string which includes its own length); only h(M) is used
+in the algorithm.
+
+In MRM, message consists of two parts, M1 ("embedded") and M2; M1 has a
+limited size (it depends on the used Falcon degree), byt M2 can be
+large. Signers and verifiers agree on the length of M1 with some
+out-of-band mechanism (it is of course beneficial to maximize the size
+of M1, since it costs "nothing").
+
+
+Computing µ, non-ring mode:
+std plain    SHAKE256(H(vk) || 0x00 || #ctx || ctx || M)[64]
+std hashed   SHAKE256(H(vk) || 0x01 || #ctx || ctx || OID(h) || h(M))[64]
+KRM plain    SHAKE256(ZZ    || 0x00 || #ctx || ctx || M)[64]
+KRM hashed   SHAKE256(ZZ    || 0x01 || #ctx || ctx || OID(h) || h(M))[64]
+MRM plain    SHAKE256(H(vk) || 0x00 || #ctx || ctx || M2)[64]
+MRM hashed   SHAKE256(H(vk) || 0x01 || #ctx || ctx || OID(h) || h(M2))[64]
+
+Computing µ, ring mode:
+std plain    SHAKE256(RPK || 0x02 || #ring || #ctx || ctx || M)[64]
+std hashed   SHAKE256(RPK || 0x03 || #ring || #ctx || ctx || OID(h) || h(M))[64]
+KRM plain    SHAKE256(ZZ  || 0x02 || #ring || #ctx || ctx || M)[64]
+KRM hashed   SHAKE256(ZZ  || 0x03 || #ring || #ctx || ctx || OID(h) || h(M))[64]
+MRM plain    SHAKE256(RPK || 0x02 || #ring || #ctx || ctx || M2)[64]
+MRM hashed   SHAKE256(RPK || 0x03 || #ring || #ctx || ctx || OID(h) || h(M2))[64]
+Ring mod uses RPK (hash of concatenation of verifying key hashes), the
+type byte is different (2/3 instead of 0/1), and there is an extra byte
+for the ring size (just after the type byte).
+
+Computing c (polynomial in Z_q[X]/(X^n+1)):
+    std    c = SHAKE256(nonce || µ)<mq:n>
+    KRM    c = SHAKE256(nonce || µ || 0x01)<mq:n>
+The nonce is 40 bytes. This does not depend on whether the message is
+pre-hashed or not. This does not depend on whether a ring mode is used
+(but µ changes in ring mode).
+
+Computing c in MRM:
+  gamma = 15 (n=512) or 24 (n=1024)
+  lambda = 19 (n=512) or 38 (n=1024)
+  nonce is gamma elements of Z_q
+  c1 = SHAKE256("Falcon MRM: H1" || bytes(nonce) || µ || M1)<mq:lambda>
+  cx = SHAKE256("Falcon MRM: H2" || bytes(c1))<mq:n-lambda>
+  cy = nonce || enc(M1)[n - lambda - gamma]
+  c2 = cx + cy    (coefficient-wise addition modulo q)
+  c = c1 || c2
+
+MRM: encoding of M1 (the enc() function):
+
+  - Input is considered as a sequence of bits in little-endian order:
+      - The first byte of M1 contains bits 0 to 7, second byte has
+        bits 8 to 15, etc.
+      - Within the first byte, bit 0 has numerical value 1 and bit 7
+        has numerical value 128.
+
+  - One extra bit of value 1 is appended, then as many bits of value 0
+    to reach the target size (in byte-oriented notation, this means
+    appending 0x01 then more bytes of value 0x00).
+
+  - The input is split into successive chunks of 163 bits then chunks
+    of 27 bits.
+
+        n=512:
+            max embedded size = 811 bytes
+            target size = 6492 bits
+            39 chunks of 163 bits, 5 chunks of 27 bits
+            39*163 + 5*27 = 6492 = 811*8 + 1 + 3
+            -> there are at least three padding bits of value 0 after the 1
+
+        n=1024:
+            max embedded size = 1633 bytes
+            target size = 13067 bits
+            80 chunks of 163 bits, 1 chunk of 27 bits
+            80*163 + 1*27 = 13067 = 1633*8 + 1 + 2
+            -> there are at least two padding bits of value 0 after the 1
+
+  - A chunk of 163 bits is interpreted as an integer x in little-endian
+    convention (for bits b[0] to b[162], x = \sum_{i=0}^{162} b[i]*2^i).
+    Value x is split in radix q=12289:
+       x = \sum_{i=0}^{11} y[i]*q^i
+    q^12 is slightly over 2^163, so 12 elements are enough.
+    Elements y[0] to y[11] are emitted, in ascending index order
+    (y[0] first, y[11] last).
+
+  - A chunk of 27 bits is interpreted as an integer x in little-endian
+    convention (for bits b[0] to b[26], x = \sum_{i=0}^{26} b[i]*2^i).
+    Value x is split in radix q=12289:
+       x = \sum_{i=0}^{1} y[i]*q^i
+    q^2 is slightly over 2^27, so 2 elements are enough.
+    Elements y[0] and y[1] are emitted, in that order.
+
+  - Within verification, the correct encoding/padding must be verified:
+
+     1. All 12-element chunks must yield back a proper 163-bit integer (in
+        the [0, 2^163-1] range).
+     2. All 2-element chunks must yield back a proper 27-bit integer (in
+        the [0, 2^27-1] range).
+     3. The bit sequence must not be entirely zero (equivalently, there must
+        be at least one non-zero element modulo q).
+     4. If j is the index of the last non-zero bit, then j must be a
+        multiple of 8 (that bit is the padding bit of value 1).
+     5. The embedded part (M1) consists of bits of index 0 to j-1,
+        yielding exactly j/8 bytes.
+
+  - Take care that computation of c1 works on M1 itself, i.e. as a sequence
+    of bytes, and not including the padding bits which are added when
+    encoding M1 into elements modulo q.
